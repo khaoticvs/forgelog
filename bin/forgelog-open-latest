@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE="$HOME/ForgeLog/sessions"
+LATEST="$(ls -1dt "$BASE"/* 2>/dev/null | head -n 1 || true)"
+if [[ -z "$LATEST" ]]; then
+  echo "No sessions found in $BASE"
+  exit 1
+fi
+
+SID="$(basename "$LATEST")"
+gnome-terminal \
+  --title="ForgeLog: $SID" \
+  --working-directory="$LATEST" \
+  -- bash -lc "export FORGELOG_SESSION_DIR='$LATEST'; export FORGELOG_SESSION_ID='$SID'; exec bash -i"

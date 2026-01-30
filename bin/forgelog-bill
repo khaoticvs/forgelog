@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ACTIVE="$HOME/ForgeLog/ACTIVE"
+[[ -f "$ACTIVE" ]] || { echo "No ACTIVE session. Start or pick one first."; exit 1; }
+
+SESSION_DIR="$(cat "$ACTIVE")"
+[[ -d "$SESSION_DIR" ]] || { echo "ACTIVE points to missing dir: $SESSION_DIR"; exit 1; }
+
+STATE="$SESSION_DIR/state.json"
+BILL="$SESSION_DIR/billing.json"
+
+init_bill() {
+  if [[ ! -f "$BILL" ]]; then
+    python3 - <<PY
+import json
+p="$BILL"
+d={"billable_active": False, "segments": []}
+with open(p,"w",encoding="utf-8") as f:
+  json.dump(d,f,indent=2)
+PY
+  fi
+}
+
+cmd="${1:-status}"
+init_bill
+
+case "$cmd" in
+  start)
+    python3 - <<PY
+import json, datetime
+p="$BILL"
+with open(p,"r",encoding="utf-8") as f: d=json.load(f)
+if d.get("billable_active"):
+  print("Billable timer already running.")
+  raise SystemExit(0)
+now=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+d["billable_active"]=True
+d["segments"].append({"start": now, "end": None})
+with open(p,"w",encoding="utf-8") as f: json.dump(d,f,indent=2)
+print("Billable START:", now)
+PY
+    ;;
+  stop)
+    python3 - <<PY
+import json, datetime
+p="$BILL"
+with open(p,"r",encoding="utf-8") as f: d=json.load(f)
+if not d.get("billable_active"):
+  print("Billable timer is not running.")
+  raise SystemExit(0)
+now=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+d["billable_active"]=False
+# close last open segment
+for seg in reversed(d.get("segments", [])):
+  if seg.get("end") is None:
+    seg["end"]=now
+    break
+with open(p,"w",encoding="utf-8") as f: json.dump(d,f,indent=2)
+print("Billable STOP:", now)
+PY
+    ;;
+  status|*)
+    python3 - <<PY
+import json, datetime
+p="$BILL"
+with open(p,"r",encoding="utf-8") as f: d=json.load(f)
+
+def parse(ts):
+  if not ts: return None
+  return datetime.datetime.fromisoformat(ts.replace("Z","+00:00"))
+
+total=datetime.timedelta()
+running=False
+run_since=None
+
+for seg in d.get("segments", []):
+  s=parse(seg.get("start"))
+  e=parse(seg.get("end"))
+  if s and e:
+    total += (e - s)
+  elif s and seg.get("end") is None:
+    running=True
+    run_since=s
+    total += (datetime.datetime.now(datetime.timezone.utc) - s)
+
+print("Billable active:", bool(d.get("billable_active")))
+print("Billable total: ", total)
+if running and run_since:
+  print("Running since: ", run_since.isoformat(timespec="seconds"))
+PY
+    ;;
+esac

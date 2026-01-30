@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE="$HOME/ForgeLog/sessions"
+mkdir -p "$BASE"
+
+LABEL="${1:-}"
+if [[ -z "$LABEL" ]]; then
+  read -r -p "Project label (e.g. clientA_fix-login): " LABEL
+fi
+LABEL="${LABEL// /_}"
+
+STAMP="$(date +%Y-%m-%d_%H%M%S)"
+SESSION_ID="${STAMP}_${LABEL}"
+SESSION_DIR="$BASE/$SESSION_ID"
+
+mkdir -p "$SESSION_DIR/artifacts"
+touch "$SESSION_DIR/commands.log" "$SESSION_DIR/notes.md"
+
+python3 - <<PY
+import json, os, datetime
+d={
+  "active": True,
+  "session_id": "$SESSION_ID",
+  "label": "$LABEL",
+  "started_at": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+}
+os.makedirs("$SESSION_DIR", exist_ok=True)
+with open("$SESSION_DIR/state.json","w",encoding="utf-8") as f:
+  json.dump(d,f,indent=2)
+PY
+
+# Launch a terminal "inside" the session
+gnome-terminal \
+  --title="ForgeLog: $LABEL" \
+  --working-directory="$SESSION_DIR" \
+  -- bash -lc "export FORGELOG_SESSION_DIR='$SESSION_DIR'; export FORGELOG_SESSION_ID='$SESSION_ID'; exec bash -i"
+printf "%s\n" "$SESSION_DIR" > "$HOME/ForgeLog/ACTIVE"

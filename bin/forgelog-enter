@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ACTIVE="$HOME/ForgeLog/ACTIVE"
+[[ -f "$ACTIVE" ]] || { echo "No ACTIVE session. Start one first."; exit 1; }
+
+SESSION_DIR="$(cat "$ACTIVE")"
+[[ -d "$SESSION_DIR" ]] || { echo "ACTIVE points to missing dir: $SESSION_DIR"; exit 1; }
+
+LABEL="$(basename "$SESSION_DIR")"
+
+gnome-terminal \
+  --title="ForgeLog: $LABEL" \
+  --working-directory="$SESSION_DIR" \
+  -- bash -lc "export FORGELOG_SESSION_DIR='$SESSION_DIR'; export FORGELOG_SESSION_ID='$LABEL'; exec bash -i"

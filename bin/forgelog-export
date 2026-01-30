@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE="$HOME/ForgeLog"
+SESS="$BASE/sessions"
+ACTIVE_FILE="$BASE/ACTIVE"
+EXPORTS="$BASE/exports"
+
+mkdir -p "$EXPORTS"
+
+mode="${1:-active}"
+
+pick_active() {
+  [[ -f "$ACTIVE_FILE" ]] || return 1
+  local d
+  d="$(cat "$ACTIVE_FILE")"
+  [[ -d "$d" ]] || return 1
+  printf "%s\n" "$d"
+}
+
+pick_latest() {
+  ls -1dt "$SESS"/* 2>/dev/null | head -n 1 || true
+}
+
+if [[ "$mode" == "active" ]]; then
+  SESSION_DIR="$(pick_active || true)"
+else
+  SESSION_DIR="$(pick_latest || true)"
+fi
+
+[[ -n "${SESSION_DIR:-}" ]] || { echo "No session found ($mode)."; exit 1; }
+
+sid="$(basename "$SESSION_DIR")"
+zipname="ForgeLog_${sid}.zip"
+out="$EXPORTS/$zipname"
+
+# zip the whole session directory
+( cd "$(dirname "$SESSION_DIR")" && zip -r "$out" "$sid" >/dev/null )
+
+echo "Exported ZIP:"
+echo "  $out"

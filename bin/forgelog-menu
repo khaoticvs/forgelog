@@ -1,0 +1,151 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE="$HOME/ForgeLog"
+BIN="$BASE/bin"
+SESS="$BASE/sessions"
+ACTIVE_FILE="$BASE/ACTIVE"
+
+mkdir -p "$SESS"
+
+have_active() { [[ -f "$ACTIVE_FILE" ]] && [[ -d "$(cat "$ACTIVE_FILE")" ]]; }
+active_dir() { cat "$ACTIVE_FILE"; }
+
+open_folder() {
+  local d="$1"
+  command -v xdg-open >/dev/null 2>&1 && xdg-open "$d" >/dev/null 2>&1 & disown || echo "Folder: $d"
+}
+
+session_summary() {
+  local d="$1"
+  local s="$d/state.json"
+  local b="$d/billing.json"
+  [[ -f "$s" ]] || { echo "No state.json in $d"; return; }
+
+  python3 - <<PY
+import json, datetime, os
+state="$s"
+bill="$b"
+
+def parse(ts):
+  if not ts: return None
+  return datetime.datetime.fromisoformat(ts.replace("Z","+00:00"))
+
+with open(state,"r",encoding="utf-8") as f:
+  d=json.load(f)
+
+sid=d.get("session_id","?")
+lab=d.get("label","?")
+st=parse(d.get("started_at"))
+en=parse(d.get("ended_at"))
+act=bool(d.get("active",False))
+
+now=datetime.datetime.now(datetime.timezone.utc)
+session_dur=None
+if st and en:
+  session_dur=en-st
+elif st and act:
+  session_dur=now-st
+
+bill_total=datetime.timedelta()
+bill_active=False
+if os.path.exists(bill):
+  with open(bill,"r",encoding="utf-8") as f:
+    bd=json.load(f)
+  bill_active=bool(bd.get("billable_active"))
+  for seg in bd.get("segments",[]):
+    s=parse(seg.get("start"))
+    e=parse(seg.get("end"))
+    if s and e:
+      bill_total += (e - s)
+    elif s and seg.get("end") is None:
+      bill_total += (now - s)
+
+print("ForgeLog Summary")
+print("================")
+print(f"Session:   {sid}")
+print(f"Label:     {lab}")
+print(f"Active:    {act}")
+print(f"Started:   {d.get('started_at')}")
+print(f"Ended:     {d.get('ended_at') or '(running)'}")
+print(f"Session:   {session_dur if session_dur else '(unknown)'}")
+print("")
+print(f"Billable active: {bill_active}")
+print(f"Billable total:  {bill_total}")
+PY
+}
+
+enter_active_terminal() {
+  if ! have_active; then
+    echo "No active session."
+    return 1
+  fi
+  "$BIN/forgelog-enter" || true
+}
+
+start_session() {
+  "$BIN/forgelog-start"
+}
+
+stop_session() {
+  if have_active; then
+    "$BIN/forgelog-stop" || true
+    rm -f "$ACTIVE_FILE"
+  else
+    echo "No active session."
+  fi
+}
+
+pick_session() {
+  "$BIN/forgelog-pick" || true
+}
+
+bill_start() { "$BIN/forgelog-bill" start || true; }
+bill_stop()  { "$BIN/forgelog-bill" stop  || true; }
+bill_status(){ "$BIN/forgelog-bill" status|| true; }
+
+export_zip_active() { "$BIN/forgelog-export" active || true; }
+export_zip_latest() { "$BIN/forgelog-export" latest || true; }
+
+while true; do
+  clear
+  echo "ForgeLog — Work Session Tracker"
+  echo "==============================="
+  echo
+  if have_active; then
+    echo "ACTIVE: $(basename "$(active_dir)")"
+  else
+    echo "ACTIVE: (none)"
+  fi
+  echo
+  echo "1) Start NEW session (creates folder + opens terminal)"
+  echo "2) Pick existing session (sets ACTIVE)"
+  echo "3) Enter ACTIVE session (opens another terminal)"
+  echo "4) Billable START (timer on)"
+  echo "5) Billable STOP  (timer off)"
+  echo "6) Billable STATUS"
+  echo "7) Summary (ACTIVE)"
+  echo "8) Stop/End ACTIVE session"
+  echo "9) Open ACTIVE folder"
+  echo "10) Export ZIP (ACTIVE)"
+  echo "11) Export ZIP (LATEST)"
+  echo "12) Exit"
+  echo
+  read -r -p "Choose: " choice
+
+  case "${choice:-}" in
+    1) start_session; read -r -p "Press ENTER..." _ ;;
+    2) pick_session; read -r -p "Press ENTER..." _ ;;
+    3) enter_active_terminal; read -r -p "Press ENTER..." _ ;;
+    4) bill_start; read -r -p "Press ENTER..." _ ;;
+    5) bill_stop; read -r -p "Press ENTER..." _ ;;
+    6) bill_status; read -r -p "Press ENTER..." _ ;;
+    7) if have_active; then session_summary "$(active_dir)"; else echo "No active session."; fi; read -r -p "Press ENTER..." _ ;;
+    8) stop_session; read -r -p "Press ENTER..." _ ;;
+    9) if have_active; then open_folder "$(active_dir)"; else echo "No active session."; read -r -p "Press ENTER..." _; fi ;;
+    10) export_zip_active; read -r -p "Press ENTER..." _ ;;
+    11) export_zip_latest; read -r -p "Press ENTER..." _ ;;
+    12|q|quit|/exit) exit 0 ;;
+    *) echo "Invalid."; read -r -p "Press ENTER..." _ ;;
+  esac
+done

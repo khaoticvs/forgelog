@@ -1,0 +1,12 @@
+# Runtime data
+sessions/
+ACTIVE
+
+# Logs
+*.log
+
+# OS junk
+.DS_Store
+
+# Editor junk
+.vscode/

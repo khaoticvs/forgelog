@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$HOME/ForgeLog"
+BASE="$ROOT/sessions"
+ACTIVE_FILE="$ROOT/ACTIVE"
+
+# Prefer ACTIVE session if present
+if [[ -f "$ACTIVE_FILE" ]]; then
+  TARGET="$(cat "$ACTIVE_FILE")"
+else
+  TARGET=""
+fi
+
+# Fallback: newest session folder
+if [[ -z "${TARGET:-}" ]]; then
+  TARGET="$(ls -1dt "$BASE"/* 2>/dev/null | head -n 1 || true)"
+fi
+
+if [[ -z "${TARGET:-}" || ! -d "$TARGET" ]]; then
+  echo "No session folder found to stop."
+  exit 1
+fi
+
+STATE="$TARGET/state.json"
+if [[ ! -f "$STATE" ]]; then
+  echo "No state.json in: $TARGET"
+  exit 1
+fi
+
+python3 - <<PY
+import json, datetime
+p="$STATE"
+with open(p,"r",encoding="utf-8") as f:
+    d=json.load(f)
+d["active"]=False
+d["ended_at"]=datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds")
+with open(p,"w",encoding="utf-8") as f:
+    json.dump(d,f,indent=2)
+print("Stopped:", d.get("session_id"))
+PY
+
+# Clear ACTIVE if it pointed to this session
+if [[ -f "$ACTIVE_FILE" ]]; then
+  ACTIVE_DIR="$(cat "$ACTIVE_FILE")"
+  if [[ "$ACTIVE_DIR" == "$TARGET" ]]; then
+    rm -f "$ACTIVE_FILE"
+  fi
+fi
+
+echo "Session folder: $TARGET"

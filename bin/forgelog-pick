@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE="$HOME/ForgeLog"
+SESS="$BASE/sessions"
+ACTIVE_FILE="$BASE/ACTIVE"
+
+mkdir -p "$SESS"
+
+mapfile -t dirs < <(ls -1dt "$SESS"/* 2>/dev/null || true)
+if (( ${#dirs[@]} == 0 )); then
+  echo "No sessions yet."
+  exit 1
+fi
+
+echo "Select a session:"
+echo
+
+i=1
+for d in "${dirs[@]}"; do
+  echo "  $i) $(basename "$d")"
+  ((i++))
+done
+echo
+read -r -p "Choose number (or blank to cancel): " n
+
+[[ -n "${n:-}" ]] || exit 1
+[[ "$n" =~ ^[0-9]+$ ]] || { echo "Not a number."; exit 1; }
+
+idx=$((n-1))
+(( idx >= 0 && idx < ${#dirs[@]} )) || { echo "Out of range."; exit 1; }
+
+chosen="${dirs[$idx]}"
+printf "%s\n" "$chosen" > "$ACTIVE_FILE"
+echo "ACTIVE set to: $(basename "$chosen")"
